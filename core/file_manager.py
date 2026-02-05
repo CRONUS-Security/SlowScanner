@@ -35,7 +35,7 @@ class FileManager:
         filename = f"{self.config.raw_responses_dir}/{protocol}_{ip}_{port}_status_{status}.txt"
         response_info = f"Status Code: {status}\n"
         response_info += f"Headers: {headers}\n"
-        response_info += f"Content: {content[:1000]}\n"  # 限制长度
+        response_info += f"Content: {content}\n"
         with open(filename, "w", encoding="utf-8") as f:
             f.write(response_info)
         return filename
