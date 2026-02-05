@@ -18,7 +18,7 @@ from core import (
     WebScanner,
 )
 
-# pip install playwright rich pyopenssl 
+# pip install playwright rich pyopenssl pyyaml
 # playwright install
 
 
@@ -441,9 +441,10 @@ class SlowHTTPScanner:
 async def main():
     """主函数 - 展示不同配置的使用方法"""
 
-    # 示例1: 使用默认配置 - 支持断点续传
-    print("=== 使用默认配置 - 结果按类型分类，支持断点续传 ===")
-    scanner = SlowHTTPScanner()
+    # 示例1: 从配置文件加载配置
+    print("=== 从配置文件加载配置 (config.yaml) ===")
+    config = ScanConfig.from_yaml("config.yaml")
+    scanner = SlowHTTPScanner(config)
 
     # 运行扫描（默认会自动从检查点恢复）
     # resume=True: 自动从上次中断的地方继续
@@ -451,13 +452,12 @@ async def main():
     # clear_checkpoint=True: 清除检查点并从头开始
     # memory_optimized=True: 内存优化模式，适用于大CIDR（如10.0.0.0/8）
     # batch_size=100: 每批从数据库获取的IP数量
-    results = await scanner.run_scan(resume=True, memory_optimized=False)
+    results = await scanner.run_scan(resume=True, memory_optimized=True, batch_size=1000)
     
-    # 示例1-B: 对于大CIDR范围使用内存优化模式
-    # print("=== 大CIDR范围扫描 - 内存优化模式 ===")
-    # large_config = ScanConfig(cidr_range="10.0.0.0/8", port=80)
-    # scanner = SlowHTTPScanner(large_config)
-    # results = await scanner.run_scan(memory_optimized=True, batch_size=100)
+    # 示例1-B: 使用默认配置（不使用配置文件）
+    # print("=== 使用默认配置 ===")
+    # scanner = SlowHTTPScanner()
+    # results = await scanner.run_scan(resume=True, memory_optimized=True, batch_size=1000)
 
     # 示例2: 强制重新开始扫描（清除之前的检查点）
     # results = await scanner.run_scan(clear_checkpoint=True)

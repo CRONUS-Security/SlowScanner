@@ -1,0 +1,37 @@
+# SlowScanner 配置文件
+
+# 扫描目标配置
+scan:
+  # CIDR范围 (常用大内网: 192.168.0.0/24, 10.0.0.0/8)
+  cidr_range: "10.0.0.0/8"
+  # 协议: http 或 https
+  protocol: "http"
+  # 目标端口
+  port: 80
+
+# 延迟配置（避免过快扫描）
+delay:
+  # 基础延迟时间（秒）
+  base_delay: 0.0
+  # 最小随机抖动（秒）
+  jitter_min: 0.0
+  # 最大随机抖动（秒）
+  jitter_max: 0.0
+
+# 网络配置
+network:
+  # 请求超时时间（秒）
+  timeout: 3.0
+  # 页面等待策略: commit, domcontentloaded, load, networkidle
+  wait_strategy: "domcontentloaded"
+  # 内容等待超时（毫秒）
+  content_wait_timeout: 2000
+
+# 日志配置
+logging:
+  # 是否启用详细日志
+  verbose_logging: true
+
+# 预设配置（快速切换）
+# 取消下面的注释来使用预设配置
+# preset: "fast"      # 可选: fast, stable, thorough

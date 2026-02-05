@@ -4,7 +4,7 @@
 import logging
 from pathlib import Path
 from typing import List, Dict, Any
-from database import HTTPScanDatabase
+from core.database import HTTPScanDatabase
 from .config import ScanConfig
 
 

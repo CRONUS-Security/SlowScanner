@@ -1,9 +1,10 @@
 """
 扫描配置模块
 """
+import yaml
 from pathlib import Path
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, field
+from typing import Literal, Optional, Dict, Any
 
 
 @dataclass
@@ -17,11 +18,78 @@ class ScanConfig:
     jitter_min: float = 0
     jitter_max: float = 0
     timeout: float = 3
-    wait_strategy: Literal["commit", "domcontentloaded", "load", "networkidle"] = (
-        "domcontentloaded"  # 页面等待策略
-    )
+    wait_strategy: Literal["commit", "domcontentloaded", "load", "networkidle"] = "domcontentloaded"
     content_wait_timeout: int = 2000  # 内容等待超时时间(毫秒)
     verbose_logging: bool = True  # 是否启用详细日志（包括预期的失败）
+    
+    @classmethod
+    def from_yaml(cls, config_path: str = "config.yaml") -> "ScanConfig":
+        """从YAML配置文件加载配置
+        
+        Args:
+            config_path: 配置文件路径，默认为 config.yaml
+            
+        Returns:
+            ScanConfig实例
+        """
+        config_file = Path(config_path)
+        
+        # 如果配置文件不存在，使用默认值并创建示例配置文件
+        if not config_file.exists():
+            print(f"配置文件 {config_path} 不存在，使用默认配置")
+            return cls()
+        
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config_data = yaml.safe_load(f)
+            
+            if not config_data:
+                print(f"配置文件 {config_path} 为空，使用默认配置")
+                return cls()
+            
+            # 检查是否使用预设配置
+            preset = config_data.get('preset')
+            if preset:
+                if preset == 'fast':
+                    cidr = config_data.get('scan', {}).get('cidr_range', '10.0.0.0/8')
+                    port = config_data.get('scan', {}).get('port', 80)
+                    return cls.create_fast_scan_config(cidr, port)
+                elif preset == 'stable':
+                    cidr = config_data.get('scan', {}).get('cidr_range', '10.0.0.0/8')
+                    port = config_data.get('scan', {}).get('port', 80)
+                    return cls.create_stable_scan_config(cidr, port)
+                elif preset == 'thorough':
+                    cidr = config_data.get('scan', {}).get('cidr_range', '10.0.0.0/8')
+                    port = config_data.get('scan', {}).get('port', 80)
+                    return cls.create_thorough_scan_config(cidr, port)
+            
+            # 从配置文件构建参数
+            scan_config = config_data.get('scan', {})
+            delay_config = config_data.get('delay', {})
+            network_config = config_data.get('network', {})
+            logging_config = config_data.get('logging', {})
+            
+            return cls(
+                cidr_range=scan_config.get('cidr_range', '10.0.0.0/8'),
+                protocol=scan_config.get('protocol', 'http'),
+                port=scan_config.get('port', 80),
+                base_delay=delay_config.get('base_delay', 0.0),
+                jitter_min=delay_config.get('jitter_min', 0.0),
+                jitter_max=delay_config.get('jitter_max', 0.0),
+                timeout=network_config.get('timeout', 3.0),
+                wait_strategy=network_config.get('wait_strategy', 'domcontentloaded'),
+                content_wait_timeout=network_config.get('content_wait_timeout', 2000),
+                verbose_logging=logging_config.get('verbose_logging', True),
+            )
+            
+        except yaml.YAMLError as e:
+            print(f"解析配置文件 {config_path} 失败: {e}")
+            print("使用默认配置")
+            return cls()
+        except Exception as e:
+            print(f"加载配置文件 {config_path} 时出错: {e}")
+            print("使用默认配置")
+            return cls()
 
     def __post_init__(self):
         """初始化时计算目录路径并创建必要的目录"""
