@@ -15,6 +15,52 @@ class WebScanner:
         self.logger = logger
         self.ssl_certificate = None  # 存储捕获到的SSL证书信息
 
+    def _create_proxied_socket(self, hostname: str, port: int):
+        """通过代理创建到目标主机的 TCP 连接"""
+        import socket
+        proxy_type = self.config.proxy_type.lower()
+        proxy_addr = self.config.proxy_address
+        proxy_port = self.config.proxy_port
+
+        if proxy_type == "socks5":
+            try:
+                import socks
+            except ImportError:
+                self.logger.warning("PySocks not installed, falling back to direct connection for SSL cert retrieval")
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(5)
+                sock.connect((hostname, port))
+                return sock
+            sock = socks.socksocket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            if self.config.proxy_auth and self.config.proxy_username:
+                sock.set_proxy(socks.SOCKS5, proxy_addr, proxy_port,
+                               username=self.config.proxy_username,
+                               password=self.config.proxy_password)
+            else:
+                sock.set_proxy(socks.SOCKS5, proxy_addr, proxy_port)
+            sock.connect((hostname, port))
+            return sock
+        else:
+            # HTTP/HTTPS 代理使用 CONNECT 隧道
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            sock.connect((proxy_addr, proxy_port))
+            connect_request = f"CONNECT {hostname}:{port} HTTP/1.1\r\nHost: {hostname}:{port}\r\n"
+            if self.config.proxy_auth and self.config.proxy_username:
+                import base64
+                credentials = base64.b64encode(
+                    f"{self.config.proxy_username}:{self.config.proxy_password}".encode()
+                ).decode()
+                connect_request += f"Proxy-Authorization: Basic {credentials}\r\n"
+            connect_request += "\r\n"
+            sock.sendall(connect_request.encode())
+            response = sock.recv(4096).decode()
+            if "200" not in response.split("\r\n")[0]:
+                sock.close()
+                raise ConnectionError(f"Proxy CONNECT failed: {response.split(chr(13))[0]}")
+            return sock
+
     def _get_ssl_certificate_openssl(self, hostname: str, port: int) -> Optional[Dict[str, Any]]:
         """使用 pyOpenSSL 直接获取完整的 SSL 证书链"""
         try:
@@ -30,10 +76,13 @@ class WebScanner:
             context = SSL.Context(SSL.SSLv23_METHOD)
             context.set_verify(SSL.VERIFY_NONE, lambda *args: True)
             
-            # 连接到服务器
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(5)
-            sock.connect((hostname, port))
+            # 连接到服务器（支持代理）
+            if self.config.proxy_enable:
+                sock = self._create_proxied_socket(hostname, port)
+            else:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(5)
+                sock.connect((hostname, port))
             
             # 包装为 SSL 连接
             ssl_conn = SSL.Connection(context, sock)
@@ -224,10 +273,20 @@ class WebScanner:
 
         try:
             async with async_playwright() as p:
+                # 构建代理配置
+                proxy_settings = None
+                if self.config.proxy_enable:
+                    proxy_server = f"{self.config.proxy_type}://{self.config.proxy_address}:{self.config.proxy_port}"
+                    proxy_settings = {"server": proxy_server}
+                    if self.config.proxy_auth and self.config.proxy_username:
+                        proxy_settings["username"] = self.config.proxy_username
+                        proxy_settings["password"] = self.config.proxy_password
+                    self.logger.info(f"Using proxy: {proxy_server}")
+
                 # 使用更严格的启动参数
-                browser = await p.chromium.launch(
-                    headless=True,
-                    args=[
+                launch_kwargs = {
+                    "headless": True,
+                    "args": [
                         "--disable-images",
                         "--disable-javascript",
                         "--disable-plugins",
@@ -235,7 +294,11 @@ class WebScanner:
                         "--no-sandbox",
                         "--disable-extensions",
                     ],
-                )
+                }
+                if proxy_settings:
+                    launch_kwargs["proxy"] = proxy_settings
+
+                browser = await p.chromium.launch(**launch_kwargs)
 
                 context = await browser.new_context(
                     ignore_https_errors=True,

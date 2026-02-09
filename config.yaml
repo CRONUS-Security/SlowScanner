@@ -17,6 +17,20 @@ scan:
   # 目标端口
   port: 80
 
+# 代理配置
+proxy:
+  enable: false
+  # 代理类型: http, https, socks5
+  type: "http"
+  # 代理地址
+  address: "127.0.0.1"
+  # 代理端口
+  port: 8080
+  # 是否启用认证
+  auth: false
+  username: ""
+  password: ""
+
 # 延迟配置（避免过快扫描）
 delay:
   # 基础延迟时间（秒）

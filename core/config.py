@@ -23,6 +23,14 @@ class ScanConfig:
     wait_strategy: Literal["commit", "domcontentloaded", "load", "networkidle"] = "domcontentloaded"
     content_wait_timeout: int = 2000  # 内容等待超时时间(毫秒)
     verbose_logging: bool = True  # 是否启用详细日志（包括预期的失败）
+    # 代理配置
+    proxy_enable: bool = False
+    proxy_type: str = "http"  # http, https, socks5
+    proxy_address: str = "127.0.0.1"
+    proxy_port: int = 8080
+    proxy_auth: bool = False
+    proxy_username: str = ""
+    proxy_password: str = ""
     
     @classmethod
     def from_yaml(cls, config_path: str = "config.yaml") -> "ScanConfig":
@@ -70,6 +78,7 @@ class ScanConfig:
             delay_config = config_data.get('delay', {})
             network_config = config_data.get('network', {})
             logging_config = config_data.get('logging', {})
+            proxy_config = config_data.get('proxy', {})
             
             return cls(
                 range_mode=scan_config.get('range_mode', 'CIDR'),
@@ -84,6 +93,13 @@ class ScanConfig:
                 wait_strategy=network_config.get('wait_strategy', 'domcontentloaded'),
                 content_wait_timeout=network_config.get('content_wait_timeout', 2000),
                 verbose_logging=logging_config.get('verbose_logging', True),
+                proxy_enable=proxy_config.get('enable', False),
+                proxy_type=proxy_config.get('type', 'http'),
+                proxy_address=proxy_config.get('address', '127.0.0.1'),
+                proxy_port=proxy_config.get('port', 8080),
+                proxy_auth=proxy_config.get('auth', False),
+                proxy_username=proxy_config.get('username', ''),
+                proxy_password=proxy_config.get('password', ''),
             )
             
         except yaml.YAMLError as e:
