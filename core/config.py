@@ -11,7 +11,9 @@ from typing import Literal, Optional, Dict, Any
 class ScanConfig:
     """扫描配置类，集中管理所有配置参数"""
     # Local Network CIDR: 172.16.0.0/12 192.168.0.0/16 10.0.0.0/8
+    range_mode: str = "CIDR"  # CIDR 或 FILE
     cidr_range: str = "10.0.0.0/8"
+    ip_file: str = "targets.txt"  # IP文件路径
     protocol: str = "http"
     port: int = 80
     base_delay: float = 0
@@ -70,7 +72,9 @@ class ScanConfig:
             logging_config = config_data.get('logging', {})
             
             return cls(
+                range_mode=scan_config.get('range_mode', 'CIDR'),
                 cidr_range=scan_config.get('cidr_range', '10.0.0.0/8'),
+                ip_file=scan_config.get('ip_file', 'targets.txt'),
                 protocol=scan_config.get('protocol', 'http'),
                 port=scan_config.get('port', 80),
                 base_delay=delay_config.get('base_delay', 0.0),

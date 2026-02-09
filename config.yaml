@@ -2,8 +2,16 @@
 
 # 扫描目标配置
 scan:
+  # 范围设定模式: "CIDR" 或 "FILE"
+  # - CIDR: 从CIDR范围生成IP地址
+  # - FILE: 从文件读取IP地址（每行一个IP）
+  range_mode: "CIDR"
   # CIDR范围 (常用大内网: 192.168.0.0/24, 10.0.0.0/8)
+  # 仅在 range_mode 为 CIDR 时生效
   cidr_range: "10.0.0.0/8"
+  # IP地址文件路径（每行一个IP地址，支持注释以#开头）
+  # 仅在 range_mode 为 FILE 时生效
+  ip_file: "targets.txt"
   # 协议: http 或 https
   protocol: "http"
   # 目标端口

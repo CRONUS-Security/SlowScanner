@@ -362,13 +362,19 @@ class SlowHTTPScanner:
         """运行扫描任务
         
         Args:
-            cidr: CIDR范围，如果为None则使用配置中的范围
+            cidr: CIDR范围或IP文件路径，如果为None则使用配置中的范围/文件
             resume: 是否从检查点恢复（默认True）
             clear_checkpoint: 是否清除现有检查点并重新开始（默认False）
-            memory_optimized: 是否使用内存优化模式（默认False，适用于大CIDR）
+            memory_optimized: 是否使用内存优化模式（默认False，适用于大范围）
             batch_size: 内存优化模式下每批扫描的IP数量（默认100）
         """
-        cidr = cidr or self.config.cidr_range
+        # 根据配置的范围模式确定数据源
+        if self.config.range_mode.upper() == "FILE":
+            ip_source = cidr or self.config.ip_file
+            self.logger_manager.main_logger.info(f"扫描目标来源: 文件 ({ip_source})")
+        else:
+            ip_source = cidr or self.config.cidr_range
+            self.logger_manager.main_logger.info(f"扫描目标来源: CIDR范围 ({ip_source})")
 
         # 如果指定清除检查点或不恢复
         if clear_checkpoint or not resume:
@@ -377,26 +383,50 @@ class SlowHTTPScanner:
 
         # 检查是否需要初始化数据库
         if not self.checkpoint_manager.checkpoint_exists() or clear_checkpoint:
-            if memory_optimized:
-                # 内存优化模式：使用生成器流式初始化
-                self.logger_manager.main_logger.info(
-                    f"Initializing database from {cidr} (memory optimized mode)..."
-                )
-                ip_generator = self.ip_generator.generate_ip_stream(cidr)
-                total_ips = self.checkpoint_manager.initialize_checkpoint_stream(
-                    ip_generator, self.config.port, batch_size=10000
-                )
-                self.logger_manager.main_logger.info(
-                    f"Database initialized with {total_ips} IP addresses"
-                )
+            if self.config.range_mode.upper() == "FILE":
+                # 从文件读取IP
+                if memory_optimized:
+                    # 内存优化模式：使用生成器流式初始化
+                    self.logger_manager.main_logger.info(
+                        f"Initializing database from file {ip_source} (memory optimized mode)..."
+                    )
+                    ip_generator = self.ip_generator.load_ips_from_file_stream(ip_source)
+                    total_ips = self.checkpoint_manager.initialize_checkpoint_stream(
+                        ip_generator, self.config.port, batch_size=10000
+                    )
+                    self.logger_manager.main_logger.info(
+                        f"Database initialized with {total_ips} IP addresses from file"
+                    )
+                else:
+                    # 常规模式：一次性读取所有IP
+                    self.logger_manager.main_logger.info(f"Reading IP list from {ip_source}...")
+                    ip_list = self.ip_generator.load_ips_from_file(ip_source)
+                    self.logger_manager.main_logger.info(
+                        f"Total {len(ip_list)} IP addresses to scan"
+                    )
+                    self.checkpoint_manager.initialize_checkpoint(ip_list, self.config.port)
             else:
-                # 常规模式：一次性生成所有IP
-                self.logger_manager.main_logger.info(f"Generating IP list from {cidr}...")
-                ip_list = self.ip_generator.generate_ip_list(cidr)
-                self.logger_manager.main_logger.info(
-                    f"Total {len(ip_list)} IP addresses to scan"
-                )
-                self.checkpoint_manager.initialize_checkpoint(ip_list, self.config.port)
+                # 从CIDR范围生成IP
+                if memory_optimized:
+                    # 内存优化模式：使用生成器流式初始化
+                    self.logger_manager.main_logger.info(
+                        f"Initializing database from {ip_source} (memory optimized mode)..."
+                    )
+                    ip_generator = self.ip_generator.generate_ip_stream(ip_source)
+                    total_ips = self.checkpoint_manager.initialize_checkpoint_stream(
+                        ip_generator, self.config.port, batch_size=10000
+                    )
+                    self.logger_manager.main_logger.info(
+                        f"Database initialized with {total_ips} IP addresses"
+                    )
+                else:
+                    # 常规模式：一次性生成所有IP
+                    self.logger_manager.main_logger.info(f"Generating IP list from {ip_source}...")
+                    ip_list = self.ip_generator.generate_ip_list(ip_source)
+                    self.logger_manager.main_logger.info(
+                        f"Total {len(ip_list)} IP addresses to scan"
+                    )
+                    self.checkpoint_manager.initialize_checkpoint(ip_list, self.config.port)
         
         # 执行扫描
         if memory_optimized:
@@ -413,7 +443,11 @@ class SlowHTTPScanner:
             total_ips = cursor.fetchone()['count']
         else:
             # 常规模式：按列表扫描
-            ip_list = self.ip_generator.generate_ip_list(cidr)
+            if self.config.range_mode.upper() == "FILE":
+                ip_list = self.ip_generator.load_ips_from_file(ip_source)
+            else:
+                ip_list = self.ip_generator.generate_ip_list(ip_source)
+            
             scan_results = await self.scan_ips(
                 ip_list, self.config.protocol, self.config.port
             )
