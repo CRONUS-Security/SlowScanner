@@ -31,6 +31,9 @@ class ScanConfig:
     proxy_auth: bool = False
     proxy_username: str = ""
     proxy_password: str = ""
+    # 自定义指纹库配置
+    fingerprint_enable: bool = True
+    fingerprint_dir: str = "./fingerprints"
     
     @classmethod
     def from_yaml(cls, config_path: str = "config.yaml") -> "ScanConfig":
@@ -79,6 +82,7 @@ class ScanConfig:
             network_config = config_data.get('network', {})
             logging_config = config_data.get('logging', {})
             proxy_config = config_data.get('proxy', {})
+            fingerprint_config = config_data.get('fingerprint', {})
             
             return cls(
                 range_mode=scan_config.get('range_mode', 'CIDR'),
@@ -100,6 +104,8 @@ class ScanConfig:
                 proxy_auth=proxy_config.get('auth', False),
                 proxy_username=proxy_config.get('username', ''),
                 proxy_password=proxy_config.get('password', ''),
+                fingerprint_enable=fingerprint_config.get('enable', True),
+                fingerprint_dir=fingerprint_config.get('dir', './fingerprints'),
             )
             
         except yaml.YAMLError as e:

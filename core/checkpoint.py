@@ -68,10 +68,27 @@ class CheckpointManager:
         """随机获取未扫描的IP"""
         return self.db.get_random_unscanned_ips(limit)
 
-    def mark_ip_scanned(self, ip: str, port: int, status: str = "", title: str = "", ssl_cert: str = "", fingerprint: str = "") -> None:
+    def mark_ip_scanned(
+        self,
+        ip: str,
+        port: int,
+        status: str = "",
+        record_type: str = "",
+        fingerprint: str = "",
+        title: str = "",
+        ssl_cert: str = "",
+    ) -> None:
         """标记IP为已扫描状态"""
         try:
-            self.db.mark_ip_scanned(ip, port, status, title, ssl_cert, fingerprint)
+            self.db.mark_ip_scanned(
+                ip=ip,
+                port=port,
+                status=status,
+                record_type=record_type,
+                fingerprint=fingerprint,
+                title=title,
+                ssl_cert=ssl_cert,
+            )
             self.logger.debug(f"Marked {ip}:{port} as scanned")
         except Exception as e:
             self.logger.error(f"Failed to mark IP as scanned: {e}")

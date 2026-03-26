@@ -15,9 +15,10 @@ class ScanRecord:
     ip: str
     port: int
     status: str = ""
+    record_type: str = ""
+    fingerprint: str = ""
     title: str = ""
     ssl_cert: str = ""
-    fingerprint: str = ""
 
 
 class DatabaseManager:
@@ -75,13 +76,16 @@ class HTTPScanDatabase(DatabaseManager):
                     ip TEXT NOT NULL,
                     port INTEGER NOT NULL,
                     status TEXT,
+                    type TEXT,
+                    fingerprint TEXT,
                     title TEXT,
                     ssl_cert TEXT,
-                    fingerprint TEXT,
                     scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (ip, port)
                 )
             """)
+
+            self._ensure_schema(cursor)
             
             # 创建索引以提高查询性能
             cursor.execute("""
@@ -99,6 +103,59 @@ class HTTPScanDatabase(DatabaseManager):
         except sqlite3.Error as e:
             self.logger.error(f"Failed to create table: {e}")
             raise
+
+    def _ensure_schema(self, cursor: sqlite3.Cursor) -> None:
+        """确保表结构包含 type 列并保持目标列顺序"""
+        cursor.execute("PRAGMA table_info(scan_records)")
+        current_columns = [row[1] for row in cursor.fetchall()]
+        expected_columns = [
+            "ip",
+            "port",
+            "status",
+            "type",
+            "fingerprint",
+            "title",
+            "ssl_cert",
+            "scanned_at",
+        ]
+
+        if current_columns == expected_columns:
+            return
+
+        self.logger.info("Migrating scan_records schema to target column layout")
+
+        # 避免索引名冲突
+        cursor.execute("DROP INDEX IF EXISTS idx_ip")
+        cursor.execute("DROP INDEX IF EXISTS idx_status")
+
+        cursor.execute("ALTER TABLE scan_records RENAME TO scan_records_old")
+        cursor.execute("""
+            CREATE TABLE scan_records (
+                ip TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                status TEXT,
+                type TEXT,
+                fingerprint TEXT,
+                title TEXT,
+                ssl_cert TEXT,
+                scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (ip, port)
+            )
+        """)
+
+        cursor.execute("PRAGMA table_info(scan_records_old)")
+        old_columns = {row[1] for row in cursor.fetchall()}
+        common_columns = [col for col in expected_columns if col in old_columns]
+
+        if common_columns:
+            cols = ", ".join(common_columns)
+            cursor.execute(f"""
+                INSERT INTO scan_records ({cols})
+                SELECT {cols} FROM scan_records_old
+            """)
+
+        cursor.execute("UPDATE scan_records SET type = '' WHERE type IS NULL")
+        cursor.execute("DROP TABLE scan_records_old")
     
     def initialize_ips(self, ip_list: List[str], port: int) -> None:
         """初始化IP列表（批量插入）"""
@@ -106,11 +163,11 @@ class HTTPScanDatabase(DatabaseManager):
             cursor = self.conn.cursor()
             
             # 使用批量插入提高性能
-            records = [(ip, port, '', '', '', '') for ip in ip_list]
+            records = [(ip, port, '', '', '', '', '') for ip in ip_list]
             cursor.executemany("""
                 INSERT OR IGNORE INTO scan_records 
-                (ip, port, status, title, ssl_cert, fingerprint)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (ip, port, status, type, fingerprint, title, ssl_cert)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, records)
             
             self.conn.commit()
@@ -136,13 +193,13 @@ class HTTPScanDatabase(DatabaseManager):
             batch = []
             
             for ip in ip_generator:
-                batch.append((ip, port, '', '', '', ''))
+                batch.append((ip, port, '', '', '', '', ''))
                 
                 if len(batch) >= batch_size:
                     cursor.executemany("""
                         INSERT OR IGNORE INTO scan_records 
-                        (ip, port, status, title, ssl_cert, fingerprint)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        (ip, port, status, type, fingerprint, title, ssl_cert)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, batch)
                     self.conn.commit()
                     total_count += len(batch)
@@ -153,8 +210,8 @@ class HTTPScanDatabase(DatabaseManager):
             if batch:
                 cursor.executemany("""
                     INSERT OR IGNORE INTO scan_records 
-                    (ip, port, status, title, ssl_cert, fingerprint)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (ip, port, status, type, fingerprint, title, ssl_cert)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, batch)
                 self.conn.commit()
                 total_count += len(batch)
@@ -171,7 +228,7 @@ class HTTPScanDatabase(DatabaseManager):
             cursor = self.conn.cursor()
             cursor.execute("""
                 SELECT ip FROM scan_records 
-                WHERE status != '' OR title != '' OR ssl_cert != '' OR fingerprint != ''
+                WHERE status != '' OR type != '' OR fingerprint != '' OR title != '' OR ssl_cert != ''
             """)
             
             scanned_ips = {row['ip'] for row in cursor.fetchall()}
@@ -185,19 +242,20 @@ class HTTPScanDatabase(DatabaseManager):
         ip: str, 
         port: int,
         status: str = "",
+        record_type: str = "",
+        fingerprint: str = "",
         title: str = "",
         ssl_cert: str = "",
-        fingerprint: str = ""
     ) -> None:
         """标记IP为已扫描"""
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
                 UPDATE scan_records 
-                SET status = ?, title = ?, ssl_cert = ?, fingerprint = ?,
+                SET status = ?, type = ?, fingerprint = ?, title = ?, ssl_cert = ?,
                     scanned_at = CURRENT_TIMESTAMP
                 WHERE ip = ? AND port = ?
-            """, (status, title, ssl_cert, fingerprint, ip, port))
+            """, (status, record_type, fingerprint, title, ssl_cert, ip, port))
             
             self.conn.commit()
             self.logger.debug(f"Marked {ip}:{port} as scanned")
@@ -209,7 +267,7 @@ class HTTPScanDatabase(DatabaseManager):
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
-                SELECT ip, port, status, title, ssl_cert, fingerprint, scanned_at
+                SELECT ip, port, status, type, fingerprint, title, ssl_cert, scanned_at
                 FROM scan_records
                 ORDER BY ip
             """)
@@ -227,7 +285,7 @@ class HTTPScanDatabase(DatabaseManager):
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
-                SELECT ip, port, status, title, ssl_cert, fingerprint, scanned_at
+                SELECT ip, port, status, type, fingerprint, title, ssl_cert, scanned_at
                 FROM scan_records
                 WHERE ip = ? AND port = ?
             """, (ip, port))
@@ -265,7 +323,7 @@ class HTTPScanDatabase(DatabaseManager):
             cursor = self.conn.cursor()
             cursor.execute("""
                 SELECT COUNT(*) as count FROM scan_records 
-                WHERE status = '' AND title = '' AND ssl_cert = '' AND fingerprint = ''
+                WHERE status = '' AND type = '' AND fingerprint = '' AND title = '' AND ssl_cert = ''
             """)
             row = cursor.fetchone()
             return row['count'] if row else 0
@@ -286,7 +344,7 @@ class HTTPScanDatabase(DatabaseManager):
             cursor = self.conn.cursor()
             cursor.execute("""
                 SELECT ip, port FROM scan_records 
-                WHERE status = '' AND title = '' AND ssl_cert = '' AND fingerprint = ''
+                WHERE status = '' AND type = '' AND fingerprint = '' AND title = '' AND ssl_cert = ''
                 ORDER BY RANDOM()
                 LIMIT ?
             """, (limit,))

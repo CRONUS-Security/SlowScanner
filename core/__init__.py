@@ -8,6 +8,7 @@ from .ip_generator import IPGenerator
 from .delay import DelayGenerator
 from .checkpoint import CheckpointManager
 from .scanner import WebScanner
+from .fingerprint import FingerprintEngine
 
 __all__ = [
     "ScanConfig",
@@ -17,4 +18,5 @@ __all__ = [
     "DelayGenerator",
     "CheckpointManager",
     "WebScanner",
+    "FingerprintEngine",
 ]

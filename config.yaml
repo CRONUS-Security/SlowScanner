@@ -54,6 +54,13 @@ logging:
   # 是否启用详细日志
   verbose_logging: true
 
+# 指纹库配置
+fingerprint:
+  # 是否启用自定义指纹识别
+  enable: true
+  # 指纹库目录（自动加载其中所有 .py 文件）
+  dir: "./fingerprints"
+
 # 预设配置（快速切换）
 # 取消下面的注释来使用预设配置
 # preset: "fast"      # 可选: fast, stable, thorough

@@ -3,6 +3,7 @@ SlowScanner - 慢速HTTP/HTTPS扫描器主程序
 一个功能强大的网络扫描工具，支持大规模CIDR范围扫描和断点续传
 """
 import asyncio
+import json
 import time
 from typing import Dict, List, Any, Optional
 from rich.progress import Progress
@@ -16,6 +17,7 @@ from core import (
     DelayGenerator,
     CheckpointManager,
     WebScanner,
+    FingerprintEngine,
 )
 
 # pip install playwright rich pyopenssl pyyaml
@@ -33,10 +35,53 @@ class SlowHTTPScanner:
             self.config, self.logger_manager.main_logger
         )
         self.web_scanner = WebScanner(self.config, self.logger_manager.main_logger)
+        self.fingerprint_engine = FingerprintEngine(
+            self.config.fingerprint_dir,
+            self.logger_manager.main_logger,
+            enabled=self.config.fingerprint_enable,
+        )
         self.ip_generator = IPGenerator()
         self.checkpoint_manager = CheckpointManager(
             self.config, self.logger_manager.main_logger
         )
+
+    def _build_scan_metadata(self, result: Dict[str, Any]) -> Dict[str, str]:
+        """从扫描结果提取数据库入库字段"""
+        if "error" in result:
+            error_type = result.get("error_type", "unknown")
+            if error_type == "timeout":
+                status = "timeout"
+            elif error_type == "connection_refused":
+                status = "connection_refused"
+            else:
+                status = f"error_{error_type}"
+            return {
+                "status": status,
+                "record_type": "",
+                "fingerprint": "",
+                "title": "",
+                "ssl_cert": "",
+            }
+
+        http_status = result.get("status", 0)
+        status = f"HTTP_{http_status}"
+        title = result.get("title", "")
+        record_type, fingerprint = self.fingerprint_engine.identify(result)
+
+        ssl_cert = ""
+        if result.get("ssl_certificate"):
+            try:
+                ssl_cert = json.dumps(result["ssl_certificate"], ensure_ascii=False)
+            except Exception:
+                ssl_cert = str(result["ssl_certificate"])
+
+        return {
+            "status": status,
+            "record_type": record_type,
+            "fingerprint": fingerprint,
+            "title": title,
+            "ssl_cert": ssl_cert,
+        }
 
     def save_response(self, result: Dict[str, Any]) -> str:
         """保存响应结果并记录日志"""
@@ -172,24 +217,16 @@ class SlowHTTPScanner:
                         # 保存响应详情
                         self.save_response(result)
                         
-                        # 根据扫描结果确定状态和标题
-                        if "error" in result:
-                            error_type = result.get("error_type", "unknown")
-                            if error_type == "timeout":
-                                status = "timeout"
-                            elif error_type == "connection_refused":
-                                status = "connection_refused"
-                            else:
-                                status = f"error_{error_type}"
-                            title = ""
-                        else:
-                            # 有响应，记录状态码和页面标题
-                            http_status = result.get("status", 0)
-                            status = f"HTTP_{http_status}"
-                            title = result.get("title", "")
-                        
-                        # 标记IP为已扫描，记录状态和标题
-                        self.checkpoint_manager.mark_ip_scanned(ip, port, status=status, title=title)
+                        metadata = self._build_scan_metadata(result)
+                        self.checkpoint_manager.mark_ip_scanned(
+                            ip,
+                            port,
+                            status=metadata["status"],
+                            record_type=metadata["record_type"],
+                            fingerprint=metadata["fingerprint"],
+                            title=metadata["title"],
+                            ssl_cert=metadata["ssl_cert"],
+                        )
                         
                         progress.update(task, advance=1)
                         
@@ -268,24 +305,16 @@ class SlowHTTPScanner:
                     # 保存响应详情
                     self.save_response(result)
                     
-                    # 根据扫描结果确定状态和标题
-                    if "error" in result:
-                        error_type = result.get("error_type", "unknown")
-                        if error_type == "timeout":
-                            status = "timeout"
-                        elif error_type == "connection_refused":
-                            status = "connection_refused"
-                        else:
-                            status = f"error_{error_type}"
-                        title = ""
-                    else:
-                        # 有响应，记录状态码和页面标题
-                        http_status = result.get("status", 0)
-                        status = f"HTTP_{http_status}"
-                        title = result.get("title", "")
-                    
-                    # 标记IP为已扫描，记录状态和标题
-                    self.checkpoint_manager.mark_ip_scanned(ip, port, status=status, title=title)
+                    metadata = self._build_scan_metadata(result)
+                    self.checkpoint_manager.mark_ip_scanned(
+                        ip,
+                        port,
+                        status=metadata["status"],
+                        record_type=metadata["record_type"],
+                        fingerprint=metadata["fingerprint"],
+                        title=metadata["title"],
+                        ssl_cert=metadata["ssl_cert"],
+                    )
                     
                     progress.update(task, advance=1)
 
