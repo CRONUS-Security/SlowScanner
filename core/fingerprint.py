@@ -6,7 +6,36 @@
 import importlib.util
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, Literal, Optional, TypedDict, cast, get_args
+
+
+FingerprintType = Literal[
+    "Device",
+    "Service",
+    "Virtualization",
+    "Windows Server",
+    "Unknown",
+]
+
+ALLOWED_FINGERPRINT_TYPES = frozenset(get_args(FingerprintType))
+
+
+class FingerprintData(TypedDict):
+    ip: str
+    port: int
+    protocol: str
+    url: str
+    status: int
+    title: str
+    headers: Dict[str, Any]
+    content: str
+    ssl_certificate: Any
+    raw: Dict[str, Any]
+
+
+class FingerprintMatch(TypedDict):
+    type: FingerprintType
+    fingerprint: str
 
 
 class FingerprintEngine:
@@ -16,7 +45,7 @@ class FingerprintEngine:
         self.fingerprint_dir = Path(fingerprint_dir)
         self.logger = logger
         self.enabled = enabled
-        self._plugins: List[Tuple[str, Any]] = []
+        self._plugins: list[tuple[str, Callable[[FingerprintData], Dict[str, Any]]]] = []
 
         if self.enabled:
             self._load_plugins()
@@ -49,7 +78,7 @@ class FingerprintEngine:
                         self.logger.info(f"Loaded fingerprint plugin: {plugin_file.name}")
                     else:
                         self.logger.warning(
-                            f"Skip fingerprint plugin {plugin_file.name}: missing callable match(data)"
+                            f"Skip fingerprint plugin {plugin_file.name}: missing callable match(data) -> dict"
                         )
                 except Exception as e:
                     self.logger.warning(f"Failed to load fingerprint plugin {plugin_file.name}: {e}")
@@ -58,38 +87,33 @@ class FingerprintEngine:
         except Exception as e:
             self.logger.error(f"Failed to initialize fingerprint directory: {e}")
 
-    def _normalize_result(self, result: Any) -> List[Tuple[str, str]]:
-        """将插件返回值标准化为 [(type, fingerprint), ...]"""
-        if not result:
-            return []
+    def _unknown_match(self) -> FingerprintMatch:
+        return {"type": "Unknown", "fingerprint": "Unknown"}
 
-        normalized: List[Tuple[str, str]] = []
+    def _normalize_type(self, raw_type: Any) -> FingerprintType:
+        type_text = str(raw_type).strip()
+        if type_text in ALLOWED_FINGERPRINT_TYPES:
+            return cast(FingerprintType, type_text)
+        return "Unknown"
 
-        # 单条: [type, fingerprint] 或 (type, fingerprint)
-        if isinstance(result, (list, tuple)) and len(result) == 2 and not isinstance(result[0], (list, tuple)):
-            fp_type = str(result[0]).strip()
-            fp_value = str(result[1]).strip()
-            if fp_type and fp_value:
-                normalized.append((fp_type, fp_value))
-            return normalized
+    def _normalize_result(self, result: Any) -> Optional[FingerprintMatch]:
+        """将插件返回值标准化为 {'type': ..., 'fingerprint': ...}"""
+        if not isinstance(result, dict):
+            return None
 
-        # 多条: [[type, fingerprint], ...] 或 [(type, fingerprint), ...]
-        if isinstance(result, list):
-            for item in result:
-                if isinstance(item, (list, tuple)) and len(item) == 2:
-                    fp_type = str(item[0]).strip()
-                    fp_value = str(item[1]).strip()
-                    if fp_type and fp_value:
-                        normalized.append((fp_type, fp_value))
+        fp_type = self._normalize_type(result.get("type", "Unknown"))
+        fp_value = str(result.get("fingerprint", "")).strip()
+        if not fp_value:
+            return None
 
-        return normalized
+        return {"type": fp_type, "fingerprint": fp_value}
 
-    def identify(self, scan_result: Dict[str, Any]) -> Tuple[str, str]:
-        """执行所有指纹插件并返回拼接后的 (type, fingerprint)"""
+    def identify(self, scan_result: Dict[str, Any]) -> FingerprintMatch:
+        """执行所有指纹插件并返回首个命中的 {'type', 'fingerprint'}"""
         if not self.enabled or not self._plugins:
-            return "", ""
+            return self._unknown_match()
 
-        payload = {
+        payload: FingerprintData = {
             "ip": scan_result.get("ip", ""),
             "port": scan_result.get("port", 0),
             "protocol": scan_result.get("protocol", ""),
@@ -102,23 +126,18 @@ class FingerprintEngine:
             "raw": scan_result,
         }
 
-        matches: List[Tuple[str, str]] = []
-        seen = set()
-
         for plugin_name, matcher in self._plugins:
             try:
                 plugin_result = matcher(payload)
                 normalized = self._normalize_result(plugin_result)
-                for pair in normalized:
-                    if pair not in seen:
-                        seen.add(pair)
-                        matches.append(pair)
+                if normalized is None:
+                    self.logger.warning(
+                        f"Fingerprint plugin {plugin_name} returned invalid result; expected dict with keys: type, fingerprint"
+                    )
+                    continue
+                if normalized["type"] != "Unknown":
+                    return normalized
             except Exception as e:
                 self.logger.warning(f"Fingerprint plugin {plugin_name} execution failed: {e}")
 
-        if not matches:
-            return "", ""
-
-        types = " | ".join([m[0] for m in matches])
-        fingerprints = " | ".join([m[1] for m in matches])
-        return types, fingerprints
+        return self._unknown_match()

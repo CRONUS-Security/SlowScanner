@@ -66,7 +66,7 @@ class SlowHTTPScanner:
         http_status = result.get("status", 0)
         status = f"HTTP_{http_status}"
         title = result.get("title", "")
-        record_type, fingerprint = self.fingerprint_engine.identify(result)
+        fp_match = self.fingerprint_engine.identify(result)
 
         ssl_cert = ""
         if result.get("ssl_certificate"):
@@ -77,8 +77,8 @@ class SlowHTTPScanner:
 
         return {
             "status": status,
-            "record_type": record_type,
-            "fingerprint": fingerprint,
+            "record_type": fp_match["type"],
+            "fingerprint": fp_match["fingerprint"],
             "title": title,
             "ssl_cert": ssl_cert,
         }
