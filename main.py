@@ -20,7 +20,7 @@ from core import (
     FingerprintEngine,
 )
 
-# pip install playwright rich pyopenssl pyyaml
+# pip install playwright rich pyopenssl pyyaml beautifulsoup4 sqlalchemy
 # playwright install
 
 
@@ -185,9 +185,7 @@ class SlowHTTPScanner:
         self.logger_manager.main_logger.info(f"{total_unscanned} IPs remaining to scan")
         
         # 计算已扫描的数量（用于进度显示）
-        cursor = self.checkpoint_manager.db.conn.cursor()
-        cursor.execute("SELECT COUNT(*) as count FROM scan_records")
-        total_count = cursor.fetchone()['count']
+        total_count = self.checkpoint_manager.db.get_total_records_count()
         scanned_count = total_count - total_unscanned
         
         with Progress() as progress:
@@ -467,9 +465,7 @@ class SlowHTTPScanner:
                 self.config.protocol, self.config.port, batch_size=batch_size
             )
             # 获取实际扫描的总数
-            cursor = self.checkpoint_manager.db.conn.cursor()
-            cursor.execute("SELECT COUNT(*) as count FROM scan_records")
-            total_ips = cursor.fetchone()['count']
+            total_ips = self.checkpoint_manager.db.get_total_records_count()
         else:
             # 常规模式：按列表扫描
             if self.config.range_mode.upper() == "FILE":
