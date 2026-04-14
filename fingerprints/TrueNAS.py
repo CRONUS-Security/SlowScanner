@@ -2,13 +2,6 @@
 TrueNAS 指纹识别模块
 在以下版本中测试通过：
 - 25.10.2.1 - Goldeye
-
-data 可用字段：
-- data['status'] -> HTTP 状态码
-- data['headers'] -> 响应头字典
-- data['content'] -> 页面内容
-- data['title'] -> 页面标题
-- data['url'] -> 请求 URL
 """
 
 import re
